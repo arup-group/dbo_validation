@@ -3,13 +3,25 @@ import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
 import time
-from config_local import SPREADSHEET_ID, READ_FROM_FILE_FLAG, OUTPUT_IN_LOCAL_FILE_FLAG , GSHEET_OUTPUT_FLAG, LOCAL_POINTNAMES_FILE, SECRET_FILENAME
+from config_local import *
+#imports SPREADSHEET_ID, 
+# READ_FROM_FILE_FLAG, 
+# OUTPUT_IN_LOCAL_FILE_FLAG , 
+# GSHEET_OUTPUT_FLAG, 
+# LOCAL_POINTNAMES_FILE, 
+# SECRET_FILENAME,
+# IGNORE_FIRST_WORD_FLAG
+
 from datetime import datetime
 import requests
 
 SLEEP_TIME = 3 #  be > 3  otherwise the gsheet API breaks for many requests "Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user'
-DATETIME_FORMAT = "%Y%m%d_%H-%M-%S" # to add in local output file
+DATETIME_FORMAT = "%Y%m%d_%H%M%S" # to add in local output file
 LOCAL_YAML_FILE = 'subfields.yaml' # if reading from github fails, reads from local yaml file
+if READ_FROM_FILE_FLAG : 
+    GSHEET_OUTPUT_FLAG = False #no sense if reading pointnames from file to write in gsheets
+
+
 
 scope = ['https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive']
@@ -28,21 +40,43 @@ class Validator:
         except:
             self.read_from_yaml()
 
-    def validate_point_type(self,word):
-        cur_point_type = word.split('_')[-1] # validate last word against point types
-        if cur_point_type.isnumeric():
-            cur_point_type = word.split('_')[-2] # skip numeric values e.g status_2
-        # print(cur_point_type)
+    def validate_point_type(self, pointname):
+        #pointname = max_temperature_sensor_1
+        output =[]
+        pointname_list = pointname.split('_') # ['DB-13','run','status','1']
+        # print(pointname_list)
+
+        if IGNORE_FIRST_WORD_FLAG:
+            pointname_list.pop(0) # BDNS device, remove from pointlist ['run','status','1']
+        
+        cur_point_type = pointname_list[-1] # validate last word against point types
+
+        if cur_point_type.isnumeric() or '-' in cur_point_type: # isnumeric doesnt get negative numbers
+            pointname_list.pop(-1)  # remove numeric value from pointname_list
+            if int(cur_point_type) <= 0:
+                result = 'Negative number'
+                temp_output = '%s - %s'%(cur_point_type, result)
+                print(temp_output)
+                output.append(temp_output)
+                self.results_dict[cur_point_type] = result
+                print(output)
+            # print(pointname_list)
+            cur_point_type = pointname_list[-1] # skip numeric values e.g status_2
+
         if cur_point_type not in self.subfields_dict['point_type']:
             result = 'NOT a valid point type'
         else:
             result = 'OK'
-        output = '%s - %s'%(cur_point_type, result)
+        temp_output = '%s - %s'%(cur_point_type, result)
+        #here writes output to list and dictionary
         if 'OK' not in result:
             self.results_dict[cur_point_type] = result
+            output.append(temp_output)
             self.results_list.append(output)
         else:
             self.results_list.append(' ')
+        # print(output)
+        #output is a list
         return output
     
     def read_from_github(self):
@@ -108,6 +142,7 @@ class Validator:
         return None
 
     def write_results_list(self, filename, row):
+        #row is list
         with open(filename , mode='a') as res_file:
             res_file_writer = csv.writer(res_file, delimiter=',', quotechar='"', quoting=csv.QUOTE_NONE)
             res_file_writer.writerow(row)
@@ -135,7 +170,8 @@ class Validator:
                 # print(c)
                 print(sheet.cell(c,3).value)
                 if sheet.cell(c,3).value is not None:
-                    result = self.validate_point_type(sheet.cell(c,3).value)
+                    output = self.validate_point_type(sheet.cell(c,3).value)
+                    result = ' , '.join(output) #since output is a list
                     if  GSHEET_OUTPUT_FLAG and 'OK' not in result: # skip writing if point is valid or GSHEET_OUTPUT_FLAG == False
                         sheet.update_cell(c, 5, result) # write the result in 5th column, column E
                 else:
@@ -155,12 +191,13 @@ def main():
         print('Reading points from local file')
         file = open(LOCAL_POINTNAMES_FILE)
         csvreader = csv.reader(file)
-        rows = []
+        # rows = []
         for row in csvreader:
-            word=row[0]
-            rows.append(word)
-            valid.validate_point_type(word)
-        print(rows)
+            pointname=row[0]
+            # print(pointname)
+            # rows.append(pointname)
+            valid.validate_point_type(pointname)
+        # print(rows)
     else:
         valid.read_write_gsheet()
 
@@ -178,11 +215,11 @@ def main():
         for li in valid.results_list:
             row = li
             # print(row)
-            valid.write_results_list(list_filename, [row])
+            valid.write_results_list(list_filename, row)
         
         for d in valid.results_dict.keys():
             row ='%s - %s'%(d,valid.results_dict[d])
-            print(row)
+            # print(row)
             valid.write_results_dict(dict_filename, row)
 
 
