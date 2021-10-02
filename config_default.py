@@ -1,0 +1,8 @@
+#Rename file to config_local.py and update fields
+SPREADSHEET_ID =''
+SECRET_FILENAME =''
+
+READ_FROM_FILE_FLAG = True
+OUTPUT_IN_LOCAL_FILE_FLAG = True
+GSHEET_OUTPUT_FLAG = False
+LOCAL_POINTNAMES_FILE = ''
