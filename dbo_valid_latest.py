@@ -9,7 +9,7 @@ import requests
 
 SLEEP_TIME = 3 #  be > 3  otherwise the gsheet API breaks for many requests "Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user'
 DATETIME_FORMAT = "%Y%m%d_%H-%M-%S" # to add in local output file
-
+LOCAL_YAML_FILE = 'subfields.yaml' # if reading from github fails, reads from local yaml file
 
 scope = ['https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive']
@@ -21,39 +21,12 @@ class Validator:
         self.subfields_dict ={}
         self.results_dict = {}
         self.results_list=[]
-        # file = open(LOCAL_POINTNAMES_FILE)
-        # csvreader = csv.reader(file)
-        # rows = []
-        # for row in csvreader:
-        #         rows.append(row)
-        # # print(rows)
-        # self.b = [i[0] for i in rows]
-        # # print(self.b)
+
         try :
             self.read_from_github()
             print('Reading from github')
         except:
             self.read_from_yaml()
-            print('Reading from local yaml file')
-
-        # self.subfields_dict = {
-        # 'point_type' : {
-        # 'accumulator': "The total accumulated quantity (e.g. total energy accumulated).",
-        # 'alarm': "A point that interprets some input values qualitatively (e.g. as good or bad, normal or in alarm, etc.). Alarms are always binary.",
-        # 'capacity': "A design parameter quantity. Ex: design motor power capacity. Is always a maximum limit.",
-        # 'counter': "Special case of accumulator that assumes integer values and non-dimensional units",
-        # 'command': "The signal given to make an action happen. Defaults to multistate unless given a measurement type",
-        # 'count': "Total count of actions or requests.",
-        # 'label': "Identifying alias for component or system.",
-        # 'mode': "Distinct mode of operation within system. Common example is economizer mode (enabled or disabled).",
-        # 'requirement': "A lower limit design parameter (e.g. minimum flowrate requirement). Is always a lower limit.",
-        # 'sensor': "Component used to measure some quality of a system or process. Can be feedback for an analog command.",
-        # 'setpoint': "Control target of process or system.",
-        # 'status': "The multistate value indicating an observed state in a piece of equipment, often indicating if a command was effected. It is a neutral observation (e.g. no quality judgment of 'good' or 'bad'). It also has no units of measurement (therefore if combined with a measurement subfield, it will indicate that the field is the directional status based on some measurement of that type, e.g. power_status equates to an on/off value based on some inference of power).",
-        # 'specification': "The specified design value for a particular operating condition (differential pressure specification).",
-        # 'timestamp': "An instant in time, represented as a numeric offset from the epoch.",
-        # }
-        # }
 
     def validate_point_type(self,word):
         cur_point_type = word.split('_')[-1] # validate last word against point types
@@ -64,13 +37,16 @@ class Validator:
             result = 'NOT a valid point type'
         else:
             result = 'OK'
-        # self.results_dict[cur_point_type] = result #creates a dictionary with results, good solution as a conclusion
         output = '%s - %s'%(cur_point_type, result)
-        self.results_dict[cur_point_type] = result
-        self.results_list.append(output)
+        if 'OK' not in result:
+            self.results_dict[cur_point_type] = result
+            self.results_list.append(output)
+        else:
+            self.results_list.append(' ')
         return output
     
     def read_from_github(self):
+        #creates a dictionary self.subfields_dict
         # URLRAW = 'https://raw.githubusercontent.com/google/digitalbuildings/master/ontology/yaml/resources/subfields/subfields.yaml'
         URL = 'https://github.com/google/digitalbuildings/blob/master/ontology/yaml/resources/subfields/subfields.yaml'
 
@@ -111,7 +87,7 @@ class Validator:
 
     def read_from_yaml(self):
         list_of_lines =[]
-        yaml_file = 'subfields.yaml'
+        yaml_file = LOCAL_YAML_FILE
         print('Reading %s ..' %yaml_file)
         with open (yaml_file) as f:
             file_str = f.readlines()
@@ -169,20 +145,32 @@ class Validator:
 def main():
     print('Output in local file flag : %s'%OUTPUT_IN_LOCAL_FILE_FLAG )
     print('Output in googlesheet flag : %s'%GSHEET_OUTPUT_FLAG )
-    valid = Validator()
-    valid.read_write_gsheet()
 
-    # point_type_list = valid.subfields_dict['point_type']
-    # valid.validate_point_type()
-    # print(valid.results_list)
-    # print('ok')
+    if  OUTPUT_IN_LOCAL_FILE_FLAG == False and GSHEET_OUTPUT_FLAG == False:
+        print('Warning: OUTPUT_IN_LOCAL_FILE_FLAG and GSHEET_OUTPUT_FLAG are False')
+
+    valid = Validator()
+    
+    if READ_FROM_FILE_FLAG:
+        print('Reading points from local file')
+        file = open(LOCAL_POINTNAMES_FILE)
+        csvreader = csv.reader(file)
+        rows = []
+        for row in csvreader:
+            word=row[0]
+            rows.append(word)
+            valid.validate_point_type(word)
+        print(rows)
+    else:
+        valid.read_write_gsheet()
+
 
     if OUTPUT_IN_LOCAL_FILE_FLAG:
         print('write to local file')
         now = datetime.now()
         date_time_str = now.strftime(DATETIME_FORMAT)
-        list_filename = 'results_list__%s.csv'%date_time_str
-        dict_filename = 'results_dict__%s.csv'%date_time_str
+        list_filename = 'results_%s_list.csv'%date_time_str
+        dict_filename = 'results_%s_dict.csv'%date_time_str
         ## f = open(LOCAL_RESULTS_FILE, mode='w+') # to clear the output file if datetime not used
         ## f.truncate()
         ## f.close()
@@ -196,18 +184,6 @@ def main():
             row ='%s - %s'%(d,valid.results_dict[d])
             print(row)
             valid.write_results_dict(dict_filename, row)
-        pass
-    else:
-
-        pass 
-    
-
-
-
-
-
-# write_results()
-# valid.read_from_yaml()
 
 
 if __name__ == '__main__':
