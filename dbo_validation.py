@@ -4,7 +4,7 @@
 import csv
 import gspread
 from google.oauth2.service_account import Credentials
-import pandas as pd
+# import pandas as pd
 import time
 from config_local import *
 #imports SPREADSHEET_ID, 
@@ -45,6 +45,16 @@ class Validator:
         self.subfields_list =[]
         self.results_dict = {}
         self.results_list=[]
+        self.field_order_dict = {
+            'aggregation_descriptor' : 0,
+            'aggregation': 1, # optional * 1
+            'descriptor': 2, # optional * 1
+            'component': 3, # optional * 10
+            'measurement_descriptor': 4, # optional * 1
+            'measurement':  5, # optional * 1
+            'point_type': 6 # required * 1           
+        }
+        #(<agg_desc>_)?(<agg>_)?(<descr>_)*(<component>_)?(<meas. descr>_)?(<meas>_)?<pointtype>(_<num> )*
         
         try :
             self.read_from_github()
@@ -52,31 +62,115 @@ class Validator:
         except:
             self.read_from_yaml()
 
-    def validate_in_subfields(self,pointname):
-        output =[]
-        pointname_list = pointname.split('_') # ['DB-13','run','status','1']
-        # print(pointname_list)
-        if IGNORE_FIRST_WORD_FLAG:
-            pointname_list.pop(0) # BDNS device, remove from pointlist ['run','status','1']
-        cur_point_type = pointname_list[-1] # validate last word against point types
+    def words_to_ordering_number(self, pointname_list):
+        num_pointname =[]
+        for i, word in enumerate(pointname_list):
+            print(i, word)
+        return num_pointname
 
-        if cur_point_type.isnumeric() or '-' in cur_point_type: # isnumeric doesnt get negative numbers
+    def _validate_order(self, order_list, pointname_list):
+        '''returns list of strings'''
+        output =[]        
+        # if order_list[-1] != self.field_order_dict['point_type']:
+        #     # print(f'{order_list[-1]}, {self.subfields_dict["point_type"]}')
+        #     output.append(f'{pointname_list[-1]} is not a point_type')
+        # else:
+        #     output.append('Point type ok')
+        sorted_list = sorted(order_list)
+        pointname_in_order = pointname_list.copy()
+        pointname_order_dict = {}
+        if sorted_list == order_list:
+            print('order is ok')
+            # output.append('order is ok')
+        else:
+            for i,v in enumerate(pointname_list):
+                if order_list[i] != 2:
+                    correct_index = sorted_list.index(order_list[i])
+                    # print(v, i, order_list[i], sorted_list[i], correct_index)
+                    pointname_order_dict[correct_index] = v
+                else:
+                    pointname_order_dict[i] = v
+            for i in pointname_order_dict.keys():
+                pointname_in_order[i] = pointname_order_dict[i]
+
+            correct_order_string = '_'.join(pointname_in_order)
+            output.append(f'correct order is: {correct_order_string}')
+
+
+        if len(output) > 0:
+            pointname_string = '_'.join(pointname_list)
+            self.results_dict[pointname_string] = correct_order_string
+            return output
+        
+
+    def validate_pointname_order(self, pointname_list):
+        order_list = self._create_order_list(pointname_list)
+        print(order_list)
+        print(order_list)
+        if len(order_list) == len(pointname_list):
+            output = self._validate_order(order_list, pointname_list)
+        else:
+            output = ['not valid subfield']
+        # print(pointname_list)
+        return output
+                    
+
+    def _create_order_list(self, pointname_list):
+        order_list =[]
+        handler = ''
+        for subfield in pointname_list:
+            print(subfield)
+            for field in self.subfields_dict.keys():
+                # print(field)
+                if subfield in self.subfields_dict[field]:
+                    order_list.append(self.field_order_dict[field])
+        # print(order_list)
+        return order_list
+
+    def _remove_prefix(self, pointname_list):
+        pointname_list.pop(0) # BDNS device, remove from pointlist ['run','status','1']
+        return pointname_list # validate last word against point types
+    
+    def _check_remove_suffix(self, last_subfield, pointname_list):
+        if last_subfield.isnumeric() or '-' in last_subfield: # isnumeric doesnt get negative numbers
             pointname_list.pop(-1)  # remove numeric value from pointname_list
-            
-        for word in pointname_list:
-            if word not in self.subfields_list:
-                result = 'NOT a valid subfield'
-            else:
-                result = 'OK'
-            temp_output = '%s - %s'%(word, result)
-            #here writes output to list and dictionary
-            if 'OK' not in result:
-                self.results_dict[word] = result
+        return pointname_list
+
+    def _split_string(self, pointname):
+        pointname_list = pointname.split('_') # ['DB-13','run','status','1']
+        return pointname_list
+    
+    def validate_pointname(self, pointname):
+        pointname_list = self._split_string(pointname)
+        if IGNORE_FIRST_WORD_FLAG:
+            pointname_list = self._remove_prefix(pointname_list)
+
+        last_subfield = pointname_list[-1]
+
+        self._check_remove_suffix(last_subfield, pointname_list)
+
+        for subfield in pointname_list:
+            output =[]
+            string_result = self.validate_in_subfields_list(subfield)
+            if 'OK' not in string_result:
+                self.results_dict[subfield] = string_result
+                temp_output = '%s - %s'%(subfield, string_result)
                 output.append(temp_output)
                 self.results_list.append(output)
             else:
-                self.results_list.append(' ')
-        return output
+                self.results_list.append('')
+        
+        self.validate_point_type(pointname)
+
+        self.validate_pointname_order(pointname_list)
+
+
+    def validate_in_subfields_list(self, subfield):
+        if subfield not in self.subfields_list:
+            string_result = 'NOT a valid subfield'
+        else:
+            string_result = 'OK'
+        return string_result
 
     def validate_point_type(self, pointname):
         #pointname = max_temperature_sensor_1
@@ -115,6 +209,7 @@ class Validator:
             self.results_list.append(' ')
         # print(output)
         #output is a list
+        print(output)
         return output
     
     def read_from_github(self):
@@ -234,11 +329,10 @@ def main():
         csvreader = csv.reader(file)
         # rows = []
         for row in csvreader:
-            pointname=row[0]
+            pointname = row[0]
             # print(pointname)
             # rows.append(pointname)
-            valid.validate_point_type(pointname)
-            valid.validate_in_subfields(pointname)
+            valid.validate_pointname(pointname)
         # print(rows)
     else:
         valid.read_write_gsheet()
@@ -260,7 +354,7 @@ def main():
             valid.write_results_list(list_filename, row)
         
         for d in valid.results_dict.keys():
-            row ='%s - %s'%(d,valid.results_dict[d])
+            row = '%s - %s'%(d,valid.results_dict[d])
             # print(row)
             valid.write_results_dict(dict_filename, row)
 
