@@ -45,7 +45,7 @@ class Validator:
         self.subfields_list =[]
         self.results_dict = {}
         self.results_list=[]
-
+        
         try :
             self.read_from_github()
             print('Reading from github')
